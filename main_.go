@@ -1,4 +1,4 @@
-package main
+//package main
 
 import (
 	"bufio"
@@ -16,18 +16,19 @@ import (
 	"time"
 )
 
-type checks struct {
+type paramCheck struct {
 	url   string
 	param string
 }
+
 var transport = &http.Transport{
 	TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	DialContext: (&net.Dialer{
 		Timeout:   15 * time.Second,
 		KeepAlive: time.Second,
 	}).DialContext,
-	MaxConnsPerHost: 1,
 }
+
 var (
 	httpClient = &http.Client{
 		Transport: transport,
@@ -35,56 +36,49 @@ var (
 	specialChars = []string{"\"", "'", "<", ">"}
 	workerCount *int
 	headers *string
-	prox5 *string
 	stdinLines []string
 )
 
 func main() {
 	workerCount = flag.Int("worker", 1, "amount of worker as an int")
-	prox5 = flag.String("proxy", "", "socks5://<ip>:<port>")
 	headers = flag.String("headers", "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:93.0) Gecko/20100101 Firefox/93.0", "; seperated headers string")
 	flag.Parse()
-
-	if *prox5 != ""{
-
-	}
-
-	checkQueue := make(chan checks)
 
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 
-	go func() {
-		ns := bufio.NewScanner(os.Stdin)
-		for ns.Scan() {
-			checkQueue <- checks{url: ns.Text()}
-		}
-		close(checkQueue)
-		return
-	}()
+	sc := bufio.NewScanner(os.Stdin)
+	initialChecks := make(chan paramCheck)
 
-	initChecks := makePool(checkQueue, func(c checks, out chan checks) {
-		reflected, err := reflectionCheck(c.url)
+	charChecks := makePool(initialChecks, func(c paramCheck, output chan paramCheck) {
+		reflected, err := checkReflected(c.url)
 		if err != nil {
+			//fmt.Fprintf(os.Stderr, "error from checkReflected: %s\n", err)
 			return
 		}
 
 		if len(reflected) == 0 {
+			// TODO: wrap in verbose mode
+			//fmt.Printf("no params were reflected in %s\n", c.url)
 			return
 		}
 
-		// target url with each parameter that reflects
-		// url1 + param1, url1 + param2
 		for _, param := range reflected {
-			//fmt.Println("Will test url "+c.url+" with param "+param)
-			out <- checks{c.url, param}
+			output <- paramCheck{c.url, param}
 		}
+
+		//if len (reflected) > 0 && err == nil {
+		//	for _, param := range reflected {
+		//		output <- paramCheck{c.url, param}
+		//	}
+		//}
 	})
 
-	done := makePool(initChecks, func(c checks, out chan checks) {
+	done := makePool(charChecks, func(c paramCheck, output chan paramCheck) {
+		// To much load to server
 		for _, char := range specialChars {
-			wasReflected, err := charCheck(c.url, c.param, "prefiiix"+char+"suffiiix")
+			wasReflected, err := checkAppend(c.url, c.param, "aprefix"+char+"asuffix")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error from checkAppend for url %s with param %s with %s: %s", c.url, c.param, char, err)
 				continue
@@ -95,15 +89,23 @@ func main() {
 			}
 		}
 	})
-	<-done
+
+	for sc.Scan() {
+		initialChecks <- paramCheck{url: sc.Text()}
+	}
+	go func() {
+		<- done
+		close(initialChecks)
+	}()
 }
 
-func reflectionCheck(target string) ([]string, error){
-	result := make([]string, 0)
+func checkReflected(targetURL string) ([]string, error) {
 
-	req, err := http.NewRequest("GET", target, nil)
+	out := make([]string, 0)
+
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
-		return result, err
+		return out, err
 	}
 
 	for _,item := range strings.Split(*headers,";"){
@@ -112,32 +114,35 @@ func reflectionCheck(target string) ([]string, error){
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return result, err
+		return out, err
 	}
 	if resp.Body == nil {
-		return result, err
+		return out, err
 	}
 	defer resp.Body.Close()
 
+	// always read the full body so we can re-use the tcp connection
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return result, err
+		return out, err
 	}
 
+	// nope (:
 	if strings.HasPrefix(resp.Status, "3") {
-		return result, nil
+		return out, nil
 	}
 
+	// also nope
 	ct := resp.Header.Get("Content-Type")
 	if ct != "" && !strings.Contains(ct, "html") {
-		return result, nil
+		return out, nil
 	}
 
 	body := string(b)
 
-	u, err := url.Parse(target)
+	u, err := url.Parse(targetURL)
 	if err != nil {
-		return result, err
+		return out, err
 	}
 
 	for key, vv := range u.Query() {
@@ -145,25 +150,30 @@ func reflectionCheck(target string) ([]string, error){
 			if !strings.Contains(body, v) {
 				continue
 			}
-			result = append(result, key)
+			out = append(out, key)
 		}
 	}
-	return result, nil
+
+	return out, nil
 }
 
-func charCheck(target string, param string, suffix string) (bool,error){
-	u, err := url.Parse(target)
+func checkAppend(targetURL, param, suffix string) (bool, error) {
+	u, err := url.Parse(targetURL)
 	if err != nil {
 		return false, err
 	}
 
 	qs := u.Query()
 	val := qs.Get(param)
+	//if val == "" {
+	//return false, nil
+	//return false, fmt.Errorf("can't append to non-existant param %s", param)
+	//}
 
 	qs.Set(param, val+suffix)
 	u.RawQuery = qs.Encode()
 
-	reflected, err := reflectionCheck(u.String())
+	reflected, err := checkReflected(u.String())
 	if err != nil {
 		return false, err
 	}
@@ -177,12 +187,12 @@ func charCheck(target string, param string, suffix string) (bool,error){
 	return false, nil
 }
 
-type workerFunc func(checks, chan checks)
+type workerFunc func(paramCheck, chan paramCheck)
 
-func makePool(input chan checks, fn workerFunc) chan checks{
+func makePool(input chan paramCheck, fn workerFunc) chan paramCheck {
 	var wg sync.WaitGroup
 
-	output := make(chan checks)
+	output := make(chan paramCheck)
 	for i := 0; i < *workerCount; i++ {
 		wg.Add(1)
 		go func() {
