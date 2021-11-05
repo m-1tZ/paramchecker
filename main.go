@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"net/proxy"
 	"os"
 	"strings"
 	"sync"
@@ -20,40 +19,53 @@ type checks struct {
 	url   string
 	param string
 }
-var transport = &http.Transport{
-	TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	DialContext: (&net.Dialer{
-		Timeout:   15 * time.Second,
-		KeepAlive: time.Second,
-	}).DialContext,
-	MaxConnsPerHost: 1,
-}
+
 var (
-	httpClient = &http.Client{
-		Transport: transport,
-	}
+	httpClient *http.Client
 	specialChars = []string{"\"", "'", "<", ">"}
 	workerCount *int
 	headers *string
-	prox5 *string
-	stdinLines []string
+	rate *int
 )
 
 func main() {
 	workerCount = flag.Int("worker", 1, "amount of worker as an int")
-	prox5 = flag.String("proxy", "", "socks5://<ip>:<port>")
+	proxyFlag := flag.String("proxy", "", "dsocks5://<ip>:<port>")
 	headers = flag.String("headers", "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:93.0) Gecko/20100101 Firefox/93.0", "; seperated headers string")
+	rate = flag.Int("rate", 0, "requests per second")
 	flag.Parse()
 
-	if *prox5 != ""{
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: time.Second,
+		}).DialContext,
+		MaxConnsPerHost: *workerCount,
+	}
 
+	if *proxyFlag != "" {
+		prox5,err := url.Parse(*proxyFlag)
+		if err != nil {
+			return
+		}
+		transport.Proxy = http.ProxyURL(prox5)
+	}
+
+	if *rate != 0 {
+		*rate = 1000/(*rate)
+	}
+
+	cr := func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	httpClient = &http.Client{
+		Transport:     transport,
+		CheckRedirect: cr,
 	}
 
 	checkQueue := make(chan checks)
-
-	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
 
 	go func() {
 		ns := bufio.NewScanner(os.Stdin)
@@ -109,7 +121,8 @@ func reflectionCheck(target string) ([]string, error){
 	for _,item := range strings.Split(*headers,";"){
 		req.Header.Add(strings.TrimSpace(strings.Split(item,":")[0]),strings.TrimSpace(strings.Split(item,":")[1]))
 	}
-
+	// throttle by rate
+	time.Sleep(time.Duration(*rate) * time.Millisecond)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return result, err
