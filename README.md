@@ -4,6 +4,8 @@ A more customizable and socks5 proxy-aware version of https://github.com/tomnomn
 ## Usage
 
 ```shell
+cat file_with_urls.txt | paramchecker [flags]
+
 Flags:
   - worker    amount of worker running concurrently
   - proxy     socks5 proxy string socks5://<ip>:<port>
