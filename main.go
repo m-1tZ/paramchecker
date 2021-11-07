@@ -31,7 +31,7 @@ var (
 func main() {
 	workerCount = flag.Int("worker", 1, "amount of worker as an int")
 	proxyFlag := flag.String("proxy", "", "dsocks5://<ip>:<port>")
-	headers = flag.String("headers", "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:93.0) Gecko/20100101 Firefox/93.0", "; seperated headers string")
+	headers = flag.String("headers", "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:93.0) Gecko/20100101 Firefox/93.0", "header strings seperated by ;;")
 	rate = flag.Int("rate", 0, "requests per second")
 	flag.Parse()
 
@@ -118,9 +118,14 @@ func reflectionCheck(target string) ([]string, error){
 		return result, err
 	}
 
-	for _,item := range strings.Split(*headers,";"){
-		req.Header.Add(strings.TrimSpace(strings.Split(item,":")[0]),strings.TrimSpace(strings.Split(item,":")[1]))
+	if strings.Contains(*headers,";;"){
+		for _,item := range strings.Split(*headers,";;"){
+			req.Header.Add(strings.TrimSpace(strings.Split(item,":")[0]),strings.TrimSpace(strings.Split(item,":")[1]))
+		}
+	}else {
+		req.Header.Add(strings.TrimSpace(strings.Split(*headers,":")[0]),strings.TrimSpace(strings.Split(*headers,":")[1]))
 	}
+
 	// throttle by rate
 	time.Sleep(time.Duration(*rate) * time.Millisecond)
 	resp, err := httpClient.Do(req)
