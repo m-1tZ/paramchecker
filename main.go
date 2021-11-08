@@ -15,23 +15,41 @@ import (
 	"time"
 )
 
+
 type checks struct {
 	url   string
 	param string
 }
 
+type headerFlags []string
+
 var (
 	httpClient *http.Client
 	specialChars = []string{"\"", "'", "<", ">"}
+	delimiter = "|xxdelixx|"
 	workerCount *int
-	headers *string
 	rate *int
+	headers headerFlags
 )
+
+
+func (i *headerFlags) String() string {
+	var builder string
+	for _,v := range *i{
+		builder += v + delimiter
+	}
+	return builder
+}
+
+func (i *headerFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
 
 func main() {
 	workerCount = flag.Int("worker", 1, "amount of worker as an int")
 	proxyFlag := flag.String("proxy", "", "dsocks5://<ip>:<port>")
-	headers = flag.String("headers", "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:93.0) Gecko/20100101 Firefox/93.0", "header strings seperated by ;;")
+	flag.Var(&headers, "header", "custom header, can be used multiple times")
 	rate = flag.Int("rate", 0, "requests per second")
 	flag.Parse()
 
@@ -118,12 +136,12 @@ func reflectionCheck(target string) ([]string, error){
 		return result, err
 	}
 
-	if strings.Contains(*headers,";;"){
-		for _,item := range strings.Split(*headers,";;"){
-			req.Header.Add(strings.TrimSpace(strings.Split(item,":")[0]),strings.TrimSpace(strings.Split(item,":")[1]))
+	if headers.String() != ""{
+		for _,item := range strings.Split(headers.String(),delimiter){
+			if strings.Contains(item,":"){
+				req.Header.Add(strings.TrimSpace(strings.Split(item,":")[0]),strings.TrimSpace(strings.Split(item,":")[1]))
+			}
 		}
-	}else {
-		req.Header.Add(strings.TrimSpace(strings.Split(*headers,":")[0]),strings.TrimSpace(strings.Split(*headers,":")[1]))
 	}
 
 	// throttle by rate
