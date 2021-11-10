@@ -101,6 +101,7 @@ func main() {
 		}
 
 		if len(reflected) == 0 {
+			//fmt.Println("Nothing reflective on "+ c.url)
 			return
 		}
 
@@ -108,6 +109,7 @@ func main() {
 		// url1 + param1, url1 + param2
 		for _, param := range reflected {
 			//fmt.Println("Will test url "+c.url+" with param "+param)
+			fmt.Printf("[reflected] %s on %s\n", param, c.url)
 			out <- checks{c.url, param}
 		}
 	})
@@ -121,7 +123,7 @@ func main() {
 			}
 
 			if wasReflected {
-				fmt.Printf("param %s is reflected and allows %s on %s\n", c.param, char, c.url)
+				fmt.Printf("[reflected] %s with %s on %s\n", c.param, char, c.url)
 			}
 		}
 	})
