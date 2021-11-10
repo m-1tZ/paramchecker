@@ -109,7 +109,7 @@ func main() {
 		// url1 + param1, url1 + param2
 		for _, param := range reflected {
 			//fmt.Println("Will test url "+c.url+" with param "+param)
-			fmt.Printf("[reflected] %s on %s\n", param, c.url)
+			fmt.Printf("[reflected] [%s] %s\n", c.url, param)
 			out <- checks{c.url, param}
 		}
 	})
@@ -118,12 +118,12 @@ func main() {
 		for _, char := range specialChars {
 			wasReflected, err := charCheck(c.url, c.param, "prefiiix"+char+"suffiiix")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error from checkAppend for url %s with param %s with %s: %s", c.url, c.param, char, err)
+				fmt.Fprintf(os.Stderr, "error from charCheck for url %s with param %s with %s: %s", c.url, c.param, char, err)
 				continue
 			}
 
 			if wasReflected {
-				fmt.Printf("[reflected] %s with %s on %s\n", c.param, char, c.url)
+				fmt.Printf("[reflected] [%s] %s with %s\n", c.url, c.param, char)
 			}
 		}
 	})
