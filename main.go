@@ -56,7 +56,7 @@ func main() {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
-			Timeout:   15 * time.Second,
+			Timeout:   5 * time.Second,
 			KeepAlive: time.Second,
 		}).DialContext,
 		MaxConnsPerHost: *workerCount,

@@ -14,3 +14,7 @@ Flags:
 ```
 Be aware, setting the rate flag combined with a worker count > 1 will not keep the actual rates per second ratio.
 Instead it can be said that **rate * worker = rates per seconds**.
+
+## Upcoming
+- Scanning multiple hosts asynchronously
+- WAF detection and evasion
