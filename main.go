@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,6 +33,8 @@ var (
 	rate *int
 	headers headerFlags
 )
+
+const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 
 func (i *headerFlags) String() string {
@@ -88,7 +92,8 @@ func main() {
 	go func() {
 		ns := bufio.NewScanner(os.Stdin)
 		for ns.Scan() {
-			checkQueue <- checks{url: ns.Text()}
+			// Make sure that there are no duplicate parameter values
+			checkQueue <- checks{url: createUniqueParams(ns.Text())}
 		}
 		close(checkQueue)
 		return
@@ -99,12 +104,10 @@ func main() {
 		if err != nil {
 			return
 		}
-
 		if len(reflected) == 0 {
 			//fmt.Println("Nothing reflective on "+ c.url)
 			return
 		}
-
 		// target url with each parameter that reflects
 		// url1 + param1, url1 + param2
 		for _, param := range reflected {
@@ -121,13 +124,43 @@ func main() {
 				fmt.Fprintf(os.Stderr, "error from charCheck for url %s with param %s with %s: %s", c.url, c.param, char, err)
 				continue
 			}
-
 			if wasReflected {
 				fmt.Printf("[reflected] [%s] %s with %s\n", c.url, c.param, char)
 			}
 		}
 	})
 	<-done
+}
+
+func createUniqueParams(uri string) string {
+	var present []string
+	u, err := url.Parse(uri)
+	if err != nil {
+		log.Fatal(err)
+	}
+	q := u.Query()
+	for key, values := range u.Query(){
+		for _, val := range values {
+			if !contains(present,val){
+				present = append(present, val)
+			}else {
+				q.Set(key,createUniqueString(6))
+			}
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func createUniqueString(length int) string{
+	var seededRand *rand.Rand = rand.New(
+		rand.NewSource(time.Now().UnixNano()))
+
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 func reflectionCheck(target string) ([]string, error){
@@ -145,7 +178,6 @@ func reflectionCheck(target string) ([]string, error){
 			}
 		}
 	}
-
 	// throttle by rate
 	time.Sleep(time.Duration(*rate) * time.Millisecond)
 	resp, err := httpClient.Do(req)
@@ -178,9 +210,10 @@ func reflectionCheck(target string) ([]string, error){
 		return result, err
 	}
 
-	for key, vv := range u.Query() {
-		for _, v := range vv {
-			if !strings.Contains(body, v) {
+	// Actual check
+	for key, values := range u.Query() {
+		for _, val := range values {
+			if !strings.Contains(body, val) {
 				continue
 			}
 			result = append(result, key)
@@ -213,6 +246,15 @@ func charCheck(target string, param string, suffix string) (bool,error){
 	}
 
 	return false, nil
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 type workerFunc func(checks, chan checks)
